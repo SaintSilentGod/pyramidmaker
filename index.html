@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Note Pyramid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap">
+<style>
+/* Layout: editor panel on the left (mode, layer, search, note lists), the square white image preview on the right; stacked on phones */
+:root {
+  --bg: #f5f4f8;
+  --card: #ffffff;
+  --ink: #2d2a35;
+  --muted: #8d8898;
+  --line: #e7e4ee;
+  --soft: #f7f6fa;
+  --accent: #8f7cc4;
+  --accent-deep: #6f5ba8;
+  --body: "Outfit", "Avenir Next", system-ui, sans-serif;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; margin: 0; }
+body {
+  background:
+    radial-gradient(900px 500px at 15% -10%, #ece7f8 0%, transparent 60%),
+    radial-gradient(800px 500px at 110% 10%, #f8ebef 0%, transparent 55%),
+    var(--bg);
+  color: var(--ink); font: 400 15px/1.5 var(--body);
+  padding: 28px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+.app { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; grid-template-columns: minmax(0, 420px) minmax(0, 1fr); align-items: start; }
+@media (max-width: 900px) { .app { grid-template-columns: minmax(0, 1fr); } }
+.panel {
+  background: var(--card); border-radius: 28px; padding: 26px clamp(16px, 4vw, 28px);
+  box-shadow: 0 1px 2px rgba(60,40,100,.04), 0 20px 60px -20px rgba(80,60,130,.18);
+  display: grid; gap: 20px; min-width: 0;
+}
+h1 { font: 600 30px/1.1 var(--body); margin: 0; letter-spacing: -.01em; }
+.sub { color: var(--muted); margin: 4px 0 0; font-size: 14px; }
+.label { font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 500; }
+.field { display: grid; gap: 8px; }
+
+.seg { display: flex; background: var(--soft); border: 1px solid var(--line); border-radius: 14px; padding: 4px; gap: 4px; }
+.seg button {
+  flex: 1; border: 0; background: none; border-radius: 10px; padding: 9px 8px; cursor: pointer;
+  font: 500 14px var(--body); color: var(--muted); transition: background .2s, color .2s, box-shadow .2s;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(60,40,100,.12); }
+.seg button:focus-visible { outline: 3px solid rgba(143,124,196,.4); outline-offset: 1px; }
+.seg.layers button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+input[type="text"] {
+  width: 100%; font: 400 16px var(--body); color: var(--ink);
+  background: var(--soft); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+  transition: border-color .2s, box-shadow .2s;
+}
+input[type="text"]:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px rgba(143,124,196,.15); background: #fff; }
+.search { position: relative; }
+.results {
+  position: absolute; left: 0; right: 0; top: calc(100% + 6px); z-index: 20; margin: 0; padding: 6px; list-style: none;
+  background: #fff; border: 1px solid var(--line); border-radius: 16px; max-height: 340px; overflow-y: auto;
+  box-shadow: 0 18px 40px -16px rgba(60,40,100,.35);
+}
+.results li { display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 10px; cursor: pointer; }
+.results li[aria-selected="true"] { background: #f1eef9; }
+.results img { width: 38px; height: 38px; border-radius: 9px; object-fit: cover; background: var(--soft); flex: 0 0 auto; }
+.results .n { font-weight: 500; }
+.results .g { font-size: 12px; color: var(--muted); }
+.results .none { color: var(--muted); cursor: default; padding: 10px; }
+.hint { font-size: 12.5px; color: var(--muted); }
+kbd { font: 500 11px var(--body); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: #fff; }
+
+.layer { display: grid; gap: 8px; padding: 12px; border-radius: 16px; border: 1.5px solid transparent; transition: border-color .2s, background .2s; }
+.layer.active { border-color: rgba(143,124,196,.45); background: #faf9fd; }
+.layer.drop { background: #f1eef9; }
+.layer-head { display: flex; justify-content: space-between; align-items: baseline; cursor: pointer; }
+.layer-head .count { font-size: 12px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; min-height: 40px; }
+.chips .empty { font-size: 13px; color: var(--muted); align-self: center; }
+.chip {
+  display: flex; align-items: center; gap: 8px; padding: 4px 6px 4px 4px; border-radius: 12px;
+  background: #fff; border: 1px solid var(--line); cursor: grab; user-select: none; max-width: 100%;
+}
+.chip img { width: 30px; height: 30px; border-radius: 8px; object-fit: cover; background: var(--soft); flex: 0 0 auto; }
+.chip span { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button {
+  border: 0; background: none; color: var(--muted); cursor: pointer; width: 22px; height: 22px; border-radius: 6px;
+  display: grid; place-items: center; font-size: 16px; line-height: 1; flex: 0 0 auto;
+}
+.chip button:hover { background: var(--soft); color: var(--ink); }
+.chip.dragging { opacity: .4; }
+.simple-note { font-size: 13px; color: var(--muted); background: var(--soft); border-radius: 12px; padding: 10px 12px; margin: 0; }
+
+.preview-wrap { position: sticky; top: 20px; display: grid; gap: 14px; min-width: 0; }
+.preview {
+  width: 100%; aspect-ratio: 1; max-width: 100%; display: block; background: #fff; border-radius: 22px;
+  box-shadow: 0 1px 2px rgba(60,40,100,.05), 0 24px 60px -24px rgba(80,60,130,.3);
+}
+.actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.primary {
+  flex: 1; min-width: 200px; font: 500 16px var(--body); color: #fff; border: 0; border-radius: 999px; padding: 15px 22px; cursor: pointer;
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep)); box-shadow: 0 10px 24px -10px rgba(111,91,168,.7);
+  transition: transform .15s, opacity .2s;
+}
+.primary:active { transform: scale(.98); }
+.primary:disabled { opacity: .5; cursor: default; }
+.primary:focus-visible, .secondary:focus-visible { outline: 3px solid rgba(143,124,196,.4); outline-offset: 3px; }
+.secondary {
+  font: 500 15px var(--body); color: var(--ink); background: #fff; border: 1px solid var(--line);
+  border-radius: 999px; padding: 14px 20px; cursor: pointer;
+}
+.secondary:hover { border-color: #d6d1e2; }
+.status { font-size: 13px; color: var(--muted); min-height: 1.4em; margin: 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <section class="panel">
+    <div>
+      <h1>Note Pyramid</h1>
+      <p class="sub">Search Fragrantica notes, add them to a layer, download the image.</p>
+    </div>
+
+    <div class="field">
+      <span class="label">Style</span>
+      <div class="seg" id="modeSeg">
+        <button type="button" data-mode="pyramid" aria-pressed="true">Pyramid</button>
+        <button type="button" data-mode="simple" aria-pressed="false">Simple</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <span class="label">Note sizes</span>
+      <div class="seg" id="sizeSeg">
+        <button type="button" data-size="graduated" aria-pressed="true">First note biggest</button>
+        <button type="button" data-size="equal" aria-pressed="false">All equal</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="title">Perfume name (optional)</label>
+      <input type="text" id="title" placeholder="Shown above the notes" autocomplete="off">
+    </div>
+
+    <div class="field" id="layerField">
+      <span class="label">Add to</span>
+      <div class="seg layers" id="layerSeg">
+        <button type="button" data-layer="top" aria-pressed="true">Top</button>
+        <button type="button" data-layer="heart" aria-pressed="false">Heart</button>
+        <button type="button" data-layer="base" aria-pressed="false">Base</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label class="label" for="q">Find a note</label>
+      <div class="search">
+        <input type="text" id="q" placeholder="Start typing, e.g. bergamot" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="results">
+        <ul class="results" id="results" role="listbox" hidden></ul>
+      </div>
+      <span class="hint"><kbd>Enter</kbd> adds the highlighted note. <kbd>Tab</kbd> switches layer. Drag notes to reorder or move them.</span>
+    </div>
+
+    <div id="lists"></div>
+  </section>
+
+  <section class="preview-wrap">
+    <canvas class="preview" id="canvas" width="2160" height="2160" aria-label="Pyramid image preview"></canvas>
+    <div class="actions">
+      <button class="primary" id="download" type="button">Download image</button>
+      <button class="secondary" id="clear" type="button">Clear all</button>
+    </div>
+    <p class="status" id="status">Square PNG, 2160 × 2160 px, white background.</p>
+  </section>
+</div>
+
+<script src="notes.js"></script>
+<script>
+const LAYERS = [
+  { key: "top", label: "Top", heading: "TOP NOTES" },
+  { key: "heart", label: "Heart", heading: "HEART NOTES" },
+  { key: "base", label: "Base", heading: "BASE NOTES" },
+];
+const S = 2160;
+const FONT = '"Outfit", "Avenir Next", system-ui, sans-serif';
+const $ = id => document.getElementById(id);
+const byId = new Map(NOTES.map(n => [n[0], n]));
+const thumb = id => `https://fimgs.net/mdimg/sastojci/t.${id}.jpg`;
+const photo = id => `/img/${id}.jpg`;
+
+let state = { mode: "pyramid", size: "graduated", layer: "top", title: "", notes: { top: [], heart: [], base: [] } };
+try {
+  const saved = JSON.parse(localStorage.getItem("notePyramid") || "null");
+  if (saved && saved.notes) state = Object.assign(state, saved);
+} catch (e) {}
+const save = () => { try { localStorage.setItem("notePyramid", JSON.stringify(state)); } catch (e) {} };
+
+/* ---------- Photos for the canvas (same-origin through the local server) ---------- */
+const photos = new Map();
+function getPhoto(id) {
+  if (!photos.has(id)) {
+    const img = new Image();
+    const entry = { img, ready: false, failed: false };
+    entry.promise = new Promise(res => {
+      img.onload = () => { entry.ready = true; res(); draw(); };
+      img.onerror = () => { entry.failed = true; res(); draw(); };
+    });
+    img.src = photo(id);
+    photos.set(id, entry);
+  }
+  return photos.get(id);
+}
+
+/* ---------- Canvas layout ---------- */
+const canvas = $("canvas"), ctx = canvas.getContext("2d");
+
+// Sizes are in "units" of the biggest photo; everything is scaled to fit the square at the end
+const NAME_PX = 0.15, NAME_GAP = 0.09, COL_GAP = 0.13, ROW_GAP = 0.2, HEAD_H = 0.34, SECTION_GAP = 0.22, MAX_PER_ROW = 6;
+
+function sizeFactor(i, n) {
+  if (state.size === "equal") return 1;
+  return i === 0 ? 1 : Math.max(0.5, 0.72 - 0.05 * (i - 1));
+}
+function nameAlpha(i) {
+  return state.size === "equal" ? 0.85 : Math.max(0.5, 0.88 - 0.08 * i);
+}
+function measure(text, px) {
+  ctx.font = `400 ${px * 1000}px ${FONT}`;
+  return ctx.measureText(text).width / 1000;
+}
+function buildRows(list) {
+  const rows = [];
+  // Spread notes evenly over the rows, so 7 notes become 4 + 3 rather than 6 + 1
+  const perRow = Math.ceil(list.length / Math.ceil(list.length / MAX_PER_ROW));
+  for (let i = 0; i < list.length; i += perRow) {
+    const cells = list.slice(i, i + perRow).map((id, j) => {
+      const k = i + j, f = sizeFactor(k), name = byId.get(id)[1];
+      return { id, f, name, alpha: nameAlpha(k), w: Math.max(f, measure(name, NAME_PX)) };
+    });
+    const width = cells.reduce((s, c) => s + c.w, 0) + COL_GAP * (cells.length - 1);
+    const imgH = Math.max(...cells.map(c => c.f));
+    rows.push({ cells, width, imgH, height: imgH + NAME_GAP + NAME_PX * 1.25 });
+  }
+  return rows;
+}
+function layout() {
+  const blocks = [];
+  if (state.mode === "pyramid") {
+    for (const L of LAYERS) {
+      if (state.notes[L.key].length) blocks.push({ heading: L.heading, rows: buildRows(state.notes[L.key]) });
+    }
+  } else {
+    const all = LAYERS.flatMap(L => state.notes[L.key]);
+    if (all.length) blocks.push({ heading: null, rows: buildRows(all) });
+  }
+  let w = 0, h = 0;
+  const title = state.title.trim();
+  if (title) { w = Math.max(w, measure(title, 0.3) * 1.1); h += 0.3 * 1.2 + 0.32; }
+  blocks.forEach((b, bi) => {
+    if (bi) h += SECTION_GAP;
+    if (b.heading) h += HEAD_H;
+    b.rows.forEach((r, ri) => { if (ri) h += ROW_GAP; h += r.height; w = Math.max(w, r.width); });
+  });
+  return { blocks, w, h, title };
+}
+
+function roundRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function drawPhoto(id, x, y, size) {
+  const r = size * 0.1;
+  ctx.save();
+  ctx.shadowColor = "rgba(30,20,50,.16)";
+  ctx.shadowBlur = size * 0.08;
+  ctx.shadowOffsetY = size * 0.025;
+  roundRect(x, y, size, size, r);
+  ctx.fillStyle = "#f3f2f5";
+  ctx.fill();
+  ctx.restore();
+  const p = getPhoto(id);
+  if (p.ready) {
+    ctx.save();
+    roundRect(x, y, size, size, r);
+    ctx.clip();
+    const { naturalWidth: iw, naturalHeight: ih } = p.img;
+    const s = Math.max(size / iw, size / ih);
+    ctx.drawImage(p.img, x + (size - iw * s) / 2, y + (size - ih * s) / 2, iw * s, ih * s);
+    ctx.restore();
+  }
+}
+
+function draw() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, S, S);
+  const L = layout();
+  if (!L.blocks.length) {
+    ctx.fillStyle = "#b9b4c4";
+    ctx.font = `400 ${S * 0.028}px ${FONT}`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("Add notes to see your pyramid", S / 2, S / 2);
+    return;
+  }
+  const margin = S * 0.09;
+  const B = Math.min((S - 2 * margin) / L.w, (S - 2 * margin) / L.h, S * 0.2);
+  let y = (S - L.h * B) / 2;
+  ctx.textAlign = "center";
+
+  if (L.title) {
+    ctx.fillStyle = "#2b2930";
+    ctx.font = `500 ${0.3 * B}px ${FONT}`;
+    ctx.textBaseline = "top";
+    if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+    ctx.fillText(L.title, S / 2, y);
+    y += 0.3 * 1.2 * B + 0.32 * B;
+  }
+
+  L.blocks.forEach((b, bi) => {
+    if (bi) y += SECTION_GAP * B;
+    if (b.heading) {
+      const cy = y + HEAD_H * B * 0.38;
+      ctx.font = `500 ${0.105 * B}px ${FONT}`;
+      if ("letterSpacing" in ctx) ctx.letterSpacing = `${0.02 * B}px`;
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#8b8794";
+      ctx.fillText(b.heading, S / 2, cy);
+      const tw = ctx.measureText(b.heading).width;
+      const half = Math.max(L.w * B / 2, tw / 2 + 0.6 * B);
+      ctx.strokeStyle = "#e6e3ec";
+      ctx.lineWidth = Math.max(2, B * 0.008);
+      ctx.beginPath();
+      ctx.moveTo(S / 2 - half, cy); ctx.lineTo(S / 2 - tw / 2 - 0.12 * B, cy);
+      ctx.moveTo(S / 2 + tw / 2 + 0.12 * B, cy); ctx.lineTo(S / 2 + half, cy);
+      ctx.stroke();
+      y += HEAD_H * B;
+    }
+    b.rows.forEach((r, ri) => {
+      if (ri) y += ROW_GAP * B;
+      let x = (S - r.width * B) / 2;
+      const base = y + r.imgH * B;   // photos sit on a shared bottom line, like Fragrantica
+      for (const c of r.cells) {
+        const size = c.f * B, cx = x + c.w * B / 2;
+        drawPhoto(c.id, cx - size / 2, base - size, size);
+        ctx.font = `400 ${NAME_PX * B}px ${FONT}`;
+        if ("letterSpacing" in ctx) ctx.letterSpacing = "0px";
+        ctx.textBaseline = "top";
+        ctx.fillStyle = `rgba(43,41,48,${c.alpha})`;
+        ctx.fillText(c.name, cx, base + NAME_GAP * B);
+        x += (c.w + COL_GAP) * B;
+      }
+      y += r.height * B;
+    });
+  });
+}
+
+/* ---------- Editor ---------- */
+function setSeg(segId, attr, value) {
+  $(segId).querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === value));
+}
+function syncControls() {
+  setSeg("modeSeg", "mode", state.mode);
+  setSeg("sizeSeg", "size", state.size);
+  setSeg("layerSeg", "layer", state.layer);
+  $("layerField").hidden = state.mode === "simple";
+  $("title").value = state.title;
+}
+
+function renderLists() {
+  const lists = $("lists");
+  if (state.mode === "simple") {
+    const all = LAYERS.flatMap(L => state.notes[L.key].map(id => [L.key, id]));
+    lists.innerHTML = `<div class="layer active" data-layer="${state.layer}"><div class="layer-head"><span class="label">All notes</span><span class="count">${all.length}</span></div><div class="chips"></div></div>`;
+    fillChips(lists.querySelector(".chips"), all);
+  } else {
+    lists.innerHTML = LAYERS.map(L =>
+      `<div class="layer${L.key === state.layer ? " active" : ""}" data-layer="${L.key}">` +
+      `<div class="layer-head"><span class="label">${L.heading}</span><span class="count">${state.notes[L.key].length}</span></div>` +
+      `<div class="chips"></div></div>`).join("");
+    LAYERS.forEach(L => fillChips(lists.querySelector(`[data-layer="${L.key}"] .chips`), state.notes[L.key].map(id => [L.key, id])));
+  }
+}
+function fillChips(box, items) {
+  if (!items.length) { box.innerHTML = '<span class="empty">No notes yet</span>'; return; }
+  box.innerHTML = "";
+  for (const [layer, id] of items) {
+    const n = byId.get(id);
+    const chip = document.createElement("div");
+    chip.className = "chip"; chip.draggable = true;
+    chip.dataset.layer = layer; chip.dataset.id = id;
+    chip.innerHTML = `<img src="${thumb(id)}" alt=""><span></span><button type="button" aria-label="Remove">×</button>`;
+    chip.querySelector("span").textContent = n[1];
+    chip.querySelector("button").addEventListener("click", () => removeNote(layer, id));
+    box.appendChild(chip);
+  }
+}
+
+function update() { save(); renderLists(); draw(); }
+function addNote(id) {
+  const list = state.notes[state.layer];
+  if (!list.includes(id)) list.push(id);
+  getPhoto(id);
+  update();
+}
+function removeNote(layer, id) {
+  state.notes[layer] = state.notes[layer].filter(x => x !== id);
+  update();
+}
+
+/* Drag and drop: move a chip before another chip, or to the end of a layer */
+let dragged = null;
+$("lists").addEventListener("dragstart", e => {
+  const chip = e.target.closest(".chip"); if (!chip) return;
+  dragged = { layer: chip.dataset.layer, id: +chip.dataset.id };
+  chip.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", chip.dataset.id);
+});
+$("lists").addEventListener("dragend", () => { dragged = null; renderLists(); });
+$("lists").addEventListener("dragover", e => {
+  if (!dragged) return;
+  const layerEl = e.target.closest(".layer"); if (!layerEl) return;
+  e.preventDefault();
+  document.querySelectorAll(".layer.drop").forEach(l => l !== layerEl && l.classList.remove("drop"));
+  layerEl.classList.add("drop");
+});
+$("lists").addEventListener("drop", e => {
+  if (!dragged) return;
+  e.preventDefault();
+  const target = e.target.closest(".chip");
+  const layerEl = e.target.closest(".layer");
+  let toLayer = target ? target.dataset.layer : layerEl.dataset.layer;
+  state.notes[dragged.layer] = state.notes[dragged.layer].filter(x => x !== dragged.id);
+  const list = state.notes[toLayer];
+  let at = list.length;
+  if (target && +target.dataset.id !== dragged.id) {
+    at = list.indexOf(+target.dataset.id);
+    const r = target.getBoundingClientRect();
+    if (e.clientX > r.left + r.width / 2) at++;
+  }
+  list.splice(at, 0, dragged.id);
+  dragged = null;
+  update();
+});
+$("lists").addEventListener("click", e => {
+  const head = e.target.closest(".layer-head");
+  if (head && state.mode === "pyramid") { state.layer = head.parentElement.dataset.layer; syncControls(); update(); $("q").focus(); }
+});
+
+/* Search */
+const q = $("q"), results = $("results");
+let matches = [], sel = 0;
+function search(text) {
+  const t = text.trim().toLowerCase();
+  if (!t) return [];
+  const starts = [], words = [], inside = [];
+  for (const n of NOTES) {
+    const name = n[1].toLowerCase();
+    if (name.startsWith(t)) starts.push(n);
+    else if (name.split(/[\s(\-/]+/).some(w => w.startsWith(t))) words.push(n);
+    else if (name.includes(t)) inside.push(n);
+  }
+  const byLen = (a, b) => a[1].length - b[1].length;
+  return [...starts.sort(byLen), ...words.sort(byLen), ...inside.sort(byLen)].slice(0, 12);
+}
+function renderResults() {
+  if (!q.value.trim()) { results.hidden = true; q.setAttribute("aria-expanded", "false"); return; }
+  results.hidden = false; q.setAttribute("aria-expanded", "true");
+  if (!matches.length) { results.innerHTML = '<li class="none">No Fragrantica note with that name</li>'; return; }
+  const dupes = new Set(matches.map(m => m[1]).filter((v, i, a) => a.indexOf(v) !== i));
+  results.innerHTML = matches.map((n, i) =>
+    `<li role="option" data-id="${n[0]}" aria-selected="${i === sel}"><img src="${thumb(n[0])}" alt="">` +
+    `<div><div class="n"></div><div class="g"></div></div></li>`).join("");
+  results.querySelectorAll("li").forEach((li, i) => {
+    const n = matches[i];
+    li.querySelector(".n").textContent = n[1];
+    li.querySelector(".g").textContent = NOTE_GROUPS[n[2]] + (dupes.has(n[1]) ? ` · #${n[0]}` : "");
+  });
+}
+function choose(id) {
+  addNote(id);
+  q.value = ""; matches = []; sel = 0; renderResults(); q.focus();
+}
+q.addEventListener("input", () => { matches = search(q.value); sel = 0; renderResults(); });
+q.addEventListener("keydown", e => {
+  if (e.key === "ArrowDown" && matches.length) { e.preventDefault(); sel = (sel + 1) % matches.length; renderResults(); scrollSel(); }
+  else if (e.key === "ArrowUp" && matches.length) { e.preventDefault(); sel = (sel - 1 + matches.length) % matches.length; renderResults(); scrollSel(); }
+  else if (e.key === "Enter") { e.preventDefault(); if (matches[sel]) choose(matches[sel][0]); }
+  else if (e.key === "Escape") { q.value = ""; matches = []; renderResults(); }
+  else if (e.key === "Tab" && state.mode === "pyramid") {
+    e.preventDefault();
+    const i = LAYERS.findIndex(L => L.key === state.layer);
+    state.layer = LAYERS[(i + (e.shiftKey ? 2 : 1)) % 3].key;
+    syncControls(); update();
+  }
+});
+function scrollSel() { const li = results.querySelector('[aria-selected="true"]'); if (li) li.scrollIntoView({ block: "nearest" }); }
+results.addEventListener("mousedown", e => {
+  const li = e.target.closest("li[data-id]"); if (!li) return;
+  e.preventDefault(); choose(+li.dataset.id);
+});
+q.addEventListener("blur", () => setTimeout(() => { results.hidden = true; }, 100));
+q.addEventListener("focus", renderResults);
+
+/* Controls */
+$("modeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { state.mode = b.dataset.mode; syncControls(); update(); } });
+$("sizeSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { state.size = b.dataset.size; syncControls(); update(); } });
+$("layerSeg").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { state.layer = b.dataset.layer; syncControls(); update(); q.focus(); } });
+$("title").addEventListener("input", e => { state.title = e.target.value; save(); draw(); });
+
+// Two-step clear: the first click asks, the second within 3 s clears
+let clearArmed = null;
+$("clear").addEventListener("click", () => {
+  const btn = $("clear");
+  if (!clearArmed) {
+    btn.textContent = "Click again to clear";
+    clearArmed = setTimeout(() => { clearArmed = null; btn.textContent = "Clear all"; }, 3000);
+    return;
+  }
+  clearTimeout(clearArmed); clearArmed = null; btn.textContent = "Clear all";
+  state.notes = { top: [], heart: [], base: [] };
+  state.title = ""; syncControls(); update();
+});
+
+$("download").addEventListener("click", async () => {
+  const ids = LAYERS.flatMap(L => state.notes[L.key]);
+  if (!ids.length) { $("status").textContent = "Add at least one note first."; return; }
+  const btn = $("download");
+  btn.disabled = true; $("status").textContent = "Loading photos…";
+  await Promise.all(ids.map(id => getPhoto(id).promise));
+  draw();
+  canvas.toBlob(blob => {
+    const a = document.createElement("a");
+    const name = (state.title.trim() || "note-pyramid").replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, "").toLowerCase();
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name || "note-pyramid"}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    btn.disabled = false;
+    const missing = ids.filter(id => getPhoto(id).failed).map(id => byId.get(id)[1]);
+    $("status").textContent = missing.length
+      ? `Downloaded. No photo found for: ${missing.join(", ")}.`
+      : `Downloaded ${a.download} (2160 × 2160 px).`;
+  }, "image/png");
+});
+
+syncControls();
+renderLists();
+LAYERS.forEach(L => state.notes[L.key].forEach(getPhoto));
+document.fonts.load(`400 40px Outfit`).then(() => document.fonts.load(`500 40px Outfit`)).then(draw, draw);
+draw();
+</script>
+</body>
+</html>
